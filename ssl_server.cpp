@@ -6,6 +6,9 @@
 //----------------------------------------------------------------------------
 #include <string>
 #include <time.h>
+#include <fstream>
+#include <iostream>
+
 using namespace std;
 
 #include <openssl/ssl.h>	// Secure Socket Layer library
@@ -23,9 +26,10 @@ int main(int argc, char** argv)
 {
     //-------------------------------------------------------------------------
     // initialize
+	printf("SERVER STEP 1 \n");
 	ERR_load_crypto_strings();
 	SSL_load_error_strings();
-    SSL_library_init();
+	SSL_library_init();
     
     setbuf(stdout, NULL); // disables buffered output
 
@@ -96,29 +100,55 @@ int main(int argc, char** argv)
 
     //-------------------------------------------------------------------------
 	// 2. Receive a random number (the challenge) from the client
+	printf("SERVER STEP 2 \n");
 	printf("2. Waiting for client to connect and send challenge...");
     
     //SSL_read
     char challenge[BUFFER_SIZE];
     memset(challenge,0,BUFFER_SIZE);
     int chalen = SSL_read(ssl,challenge,BUFFER_SIZE);
+
+	if (chalen <= 0)
+	{
+		printf("Error recieving challenge from client");
+        print_errors();
+		exit(EXIT_FAILURE);
+	}
     
 	printf("DONE.\n");
-	printf("    (Challenge: \"%s\")\n", challenge);//.c_str());
+	printf("    (Challenge: \"%s\")\n", challenge);
 
     //-------------------------------------------------------------------------
 	// 3. Generate the SHA1 hash of the challenge
+	printf("SERVER STEP 3 \n");
 	printf("3. Generating SHA1 hash...");
+	
+	BIO *hash, *bbuf;
+	char mdbuf[20];
+	memset(mdbuf,0,sizeof(mdbuf));
 
 	//BIO_new(BIO_s_mem());
+	bbuf = BIO_new(BIO_s_mem());
 	//BIO_write
+	BIO_write(bbuf, challenge, chalen);
 	//BIO_new(BIO_f_md());
+	hash = BIO_new(BIO_f_md());
 	//BIO_set_md;
+	BIO_set_md(hash, EVP_sha1());
 	//BIO_push;
+	BIO_push(hash, bbuf);
 	//BIO_gets;
-
-    int mdlen=0;
-	string hash_string = "";
+	//int mdlen=BIO_gets(hash, mdbuf,sizeof(mdbuf));
+	int mdlen=BIO_read(hash, mdbuf,sizeof(mdbuf));
+// 	int mdlen=40;
+//  	int actualRead = 0;
+//  	while((actualRead = BIO_read(hash, bbuf, 40)) >= 1)
+//  	{
+//  		//Could send this to multiple chains from here
+//  		//actualWritten = BIO_write(boutfile, buffer, actualRead);
+//  	}
+	
+	string hash_string = buff2hex((const unsigned char*)(mdbuf), mdlen);
 
 	printf("SUCCESS.\n");
 	printf("    (SHA1 hash: \"%s\" (%d bytes))\n", hash_string.c_str(), mdlen);
@@ -126,63 +156,114 @@ int main(int argc, char** argv)
     //-------------------------------------------------------------------------
 	// 4. Sign the key using the RSA private key specified in the
 	//     file "rsaprivatekey.pem"
+	printf("SERVER STEP 4 \n");
 	printf("4. Signing the key...");
 
-    //PEM_read_bio_RSAPrivateKey
-    //RSA_private_encrypt
+	unsigned char signature[EVP_MAX_MD_SIZE];
+	BIO *rsaprikey = BIO_new_file("rsaprivatekey.pem", "r");
 
-	char * signature="FIX_ME";
-	int siglen=0;
+	//PEM_read_bio_RSAPrivateKey
+	RSA * rsa_pri = PEM_read_bio_RSAPrivateKey(rsaprikey,NULL,0,NULL);
+	//RSA_private_encrypt
+	int siglen = RSA_private_encrypt(mdlen,(const unsigned char*)(mdbuf),
+					 signature, rsa_pri, RSA_PKCS1_PADDING);
 
     printf("DONE.\n");
     printf("    (Signed key length: %d bytes)\n", siglen);
-    printf("    (Signature: \"%s\" (%d bytes))\n", buff2hex((const unsigned char*)signature, siglen).c_str(), siglen);
+    printf("    (Signature: \"%s\" (%d bytes))\n", 
+	   buff2hex((const unsigned char*)signature, siglen).c_str(), siglen);
 
     //-------------------------------------------------------------------------
 	// 5. Send the signature to the client for authentication
+	printf("SERVER STEP 5 \n");
 	printf("5. Sending signature to client for authentication...");
 
 	//BIO_flush
+	BIO_flush(server);
 	//SSL_write
+	SSL_write(ssl,signature,siglen);
+
 
 	//char signature[BUFFER_SIZE];
 	//memset(signature,0,BUFFER_SIZE);
 	//int siglen = SSL_read(ssl, signature, BUFFER_SIZE);
-
+	
     printf("DONE.\n");
     
     //-------------------------------------------------------------------------
 	// 6. Receive a filename request from the client
+	printf("SERVER STEP 6 \n");
 	printf("6. Receiving file request from client...");
 
     //SSL_read
-    char file[BUFFER_SIZE];
-    memset(file,0,sizeof(file));
-    printf("RECEIVED.\n");
-    printf("    (File requested: \"%s\"\n", file);
+    char filename[50];
+    memset(filename,0,sizeof(filename));
+    
+    int flen = SSL_read(ssl,filename,BUFFER_SIZE);
+	
+    if (flen <= 0)
+      {
+		printf("Error recieving filename from client");
+        print_errors();
+		exit(EXIT_FAILURE);
+	}
+    
+
+    printf("RECEIVED.\n"); 
+    printf("    (File requested: \"%s\"\n", filename);
 
     //-------------------------------------------------------------------------
 	// 7. Send the requested file back to the client (if it exists)
+	printf("SERVER STEP 7 \n");
 	printf("7. Attempting to send requested file to client...");
 
 	PAUSE(2);
-	//BIO_flush
-	//BIO_new_file
+      //BIO_flush
+	BIO_flush(server);
+      //BIO_new_file
+	BIO *bfile = BIO_new_file(filename,"r");
+      //BIO_puts(server, "fnf");
 	//BIO_puts(server, "fnf");
-    //BIO_read(bfile, buffer, BUFFER_SIZE)) > 0)
-	//SSL_write(ssl, buffer, bytesRead);
+      //BIO_read(bfile, buffer, BUFFER_SIZE)) > 0)
+	char buffer[BUFFER_SIZE];
+	int bytesSent=0;
+	int bytesRead=0;
+	ifstream file;
+	file.open(filename);
+	if(!file.is_open())
+	{
+	  printf("Error, no file read, no file sent\n");
+	  print_errors();
+	  exit(EXIT_FAILURE);
+	}  
+	
+	do {
+	  int count=0;
+	  //SSL_write(ssl, buffer, bytesRead);
+	  for(int i=0;i<BUFFER_SIZE;i++){
+	    if(!file.is_open())
+	      break;
+	    file.get(buffer[i]);
+	    count++;
+	  }
+	  bytesRead= BIO_read(bfile, buffer,count);
+	  bytesSent+=SSL_write(ssl,buffer,bytesRead);
+	} while(bytesRead > 0);
+	
+	file.close();
 
-    int bytesSent=0;
-    
     printf("SENT.\n");
     printf("    (Bytes sent: %d)\n", bytesSent);
 
     //-------------------------------------------------------------------------
 	// 8. Close the connection
+	printf("SERVER STEP 8 \n");
 	printf("8. Closing connection...");
 
 	//SSL_shutdown
-    //BIO_reset
+	SSL_shutdown(ssl);
+	//BIO_reset
+
     printf("DONE.\n");
 
     printf("\n\nALL TASKS COMPLETED SUCCESSFULLY.\n");
