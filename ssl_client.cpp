@@ -17,6 +17,7 @@ using namespace std;
 #include <openssl/pem.h>	// For reading .pem files for RSA keys
 #include <openssl/err.h>	// ERR_get_error()
 #include <openssl/dh.h>		// Diffie-Helman algorithms & libraries
+#include <openssl/rand.h>
 
 #include "utils.h"
 
@@ -96,15 +97,18 @@ int main(int argc, char** argv)
 	printf("CLIENT STEP 2 \n");
 	printf("2.  Sending challenge to the server...");
     
-    string randomNumber = "31338";
+	//string randomNumber="31337";
+	unsigned char randomNumber[BUFFER_SIZE];
+       	RAND_bytes(randomNumber,BUFFER_SIZE);
+	
 	//SSL_write
-
 	printf("\nCLIENT STEP 3 \n");
-    int num_bytes = SSL_write(ssl, randomNumber.c_str(), BUFFER_SIZE);
-    
+	int num_bytes = SSL_write(ssl, randomNumber, BUFFER_SIZE);
+	
     
     printf("SUCCESS.\n");
-	printf("    (Challenge sent: \"%s\")\n", randomNumber.c_str());
+ 	printf("    (Challenge sent: \"%s\")\n", buff2hex((const unsigned char*)(randomNumber),BUFFER_SIZE).c_str());
+	//printf("    (Challenge sent: \"%s\")\n",randomNumber,num_bytes);
 
     //-------------------------------------------------------------------------
 	// 3a. Receive the signed key from the server
@@ -178,23 +182,21 @@ int main(int argc, char** argv)
 	printf("5.  Receiving response from server...");
 
     //BIO_new_file
-	//bbuf = BIO_new_file("outfile.txt","w");
 	ofstream file;
-	file.open("outfile.txt");
+	file.open(filename);
 	int filelength=0;
-	int temp_fl=0;
+	int temp_fl=1;
 	char intofile[BUFFER_SIZE];
     //SSL_read
-	do{
-	  //temp_fl=SSL_read(ssl,(void *)(bbuf),BUFFER_SIZE);
-	  //BIO_write(bbuf,intofile,temp_fl);
+	printf("\n");
+	while(temp_fl>0){
 	  temp_fl=SSL_read(ssl,intofile,BUFFER_SIZE);
 	  print_errors();
-	  printf("string:%s  \n-----------\n",intofile,temp_fl);
-	  //BIO_write(bbuf,intofile,temp_fl);
+	  printf("%s",intofile,temp_fl);
 	  file<<intofile;
 	  filelength+=temp_fl;
-	}while(temp_fl>0);
+	}
+	printf("\n");
 	file.close();
 	//BIO_write
 	//BIO_free

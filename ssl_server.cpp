@@ -116,7 +116,8 @@ int main(int argc, char** argv)
 	}
     
 	printf("DONE.\n");
-	printf("    (Challenge: \"%s\")\n", challenge);
+	printf("    (Challenge: \"%s\")\n", 
+	       buff2hex((const unsigned char*)(challenge),chalen).c_str());
 
     //-------------------------------------------------------------------------
 	// 3. Generate the SHA1 hash of the challenge
@@ -140,14 +141,6 @@ int main(int argc, char** argv)
 	//BIO_gets;
 	//int mdlen=BIO_gets(hash, mdbuf,sizeof(mdbuf));
 	int mdlen=BIO_read(hash, mdbuf,sizeof(mdbuf));
-// 	int mdlen=40;
-//  	int actualRead = 0;
-//  	while((actualRead = BIO_read(hash, bbuf, 40)) >= 1)
-//  	{
-//  		//Could send this to multiple chains from here
-//  		//actualWritten = BIO_write(boutfile, buffer, actualRead);
-//  	}
-	
 	string hash_string = buff2hex((const unsigned char*)(mdbuf), mdlen);
 
 	printf("SUCCESS.\n");
@@ -225,9 +218,9 @@ int main(int argc, char** argv)
       //BIO_puts(server, "fnf");
 	//BIO_puts(server, "fnf");
       //BIO_read(bfile, buffer, BUFFER_SIZE)) > 0)
-	char buffer[BUFFER_SIZE];
+	char buffer[100];
 	int bytesSent=0;
-	int bytesRead=0;
+	int bytesRead=1;
 	ifstream file;
 	file.open(filename);
 	if(!file.is_open())
@@ -237,10 +230,10 @@ int main(int argc, char** argv)
 	  exit(EXIT_FAILURE);
 	}  
 	
-	do {
+	while(bytesRead>0){
 	  int count=0;
 	  //SSL_write(ssl, buffer, bytesRead);
-	  for(int i=0;i<BUFFER_SIZE;i++){
+	  for(int i=0;i<100;i++){
 	    if(!file.is_open())
 	      break;
 	    file.get(buffer[i]);
@@ -248,7 +241,7 @@ int main(int argc, char** argv)
 	  }
 	  bytesRead= BIO_read(bfile, buffer,count);
 	  bytesSent+=SSL_write(ssl,buffer,bytesRead);
-	} while(bytesRead > 0);
+	}
 	
 	file.close();
 
